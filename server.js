@@ -128,51 +128,83 @@ app.post('/api/students', (req, res) => {
 
 // API: Run scraper with SSE
 app.get('/api/run', (req, res) => {
+    // Always set SSE headers first
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
     const { sessionId, session } = getSession(req, res);
+    res.setHeader('X-Session-Id', sessionId);
+
+    // Helper to send SSE message
+    function sendSSE(type, message, code) {
+        res.write(`data: ${JSON.stringify({ type, message, code })}\n\n`);
+    }
 
     // Check if already running
     if (session.isRunning) {
-        res.status(400).json({ error: 'Scraper is already running for this session' });
+        sendSSE('error', 'Scraper is already running for this session');
+        sendSSE('done', null, 1);
+        res.end();
         return;
     }
 
     // Validate config
     if (!session.config.username || !session.config.password || !session.config.submissionUrl) {
-        res.status(400).json({ error: 'Please fill in all required config fields' });
+        sendSSE('error', '❌ Please fill in all required config fields (Username, Password, Submission URL)');
+        sendSSE('done', null, 1);
+        res.end();
         return;
     }
 
     if (!session.students.trim()) {
-        res.status(400).json({ error: 'Please add at least one NPM to the list' });
+        sendSSE('error', '❌ Please add at least one NPM to the list');
+        sendSSE('done', null, 1);
+        res.end();
         return;
     }
 
     session.isRunning = true;
-
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Session-Id', sessionId);
+    sendSSE('log', '🔄 Preparing scraper...');
 
     // Create session-specific download folder
     const sessionDownloadPath = path.join(__dirname, 'downloads', sessionId);
-    if (!fs.existsSync(sessionDownloadPath)) {
-        fs.mkdirSync(sessionDownloadPath, { recursive: true });
+    try {
+        if (!fs.existsSync(sessionDownloadPath)) {
+            fs.mkdirSync(sessionDownloadPath, { recursive: true });
+        }
+    } catch (e) {
+        sendSSE('error', `❌ Failed to create download folder: ${e.message}`);
+        sendSSE('done', null, 1);
+        session.isRunning = false;
+        res.end();
+        return;
     }
 
     // Create temp config file for this session
-    const tempConfigPath = path.join(__dirname, 'temp', `config-${sessionId}.json`);
     const tempDir = path.join(__dirname, 'temp');
-    if (!fs.existsSync(tempDir)) {
-        fs.mkdirSync(tempDir, { recursive: true });
+    const tempConfigPath = path.join(tempDir, `config-${sessionId}.json`);
+
+    try {
+        if (!fs.existsSync(tempDir)) {
+            fs.mkdirSync(tempDir, { recursive: true });
+        }
+
+        fs.writeFileSync(tempConfigPath, JSON.stringify({
+            ...session.config,
+            students: session.students,
+            downloadPath: sessionDownloadPath,
+            loginUrl: 'https://emas3.ui.ac.id/login/index.php',
+        }));
+    } catch (e) {
+        sendSSE('error', `❌ Failed to prepare config: ${e.message}`);
+        sendSSE('done', null, 1);
+        session.isRunning = false;
+        res.end();
+        return;
     }
 
-    fs.writeFileSync(tempConfigPath, JSON.stringify({
-        ...session.config,
-        students: session.students,
-        downloadPath: sessionDownloadPath,
-        loginUrl: 'https://emas3.ui.ac.id/login/index.php',
-    }));
+    sendSSE('log', '🚀 Starting scraper process...');
 
     const scraper = spawn('node', ['src/runner.js', tempConfigPath], { cwd: __dirname });
 
@@ -180,13 +212,20 @@ app.get('/api/run', (req, res) => {
         const lines = data.toString().split('\n');
         lines.forEach(line => {
             if (line.trim()) {
-                res.write(`data: ${JSON.stringify({ type: 'log', message: line })}\n\n`);
+                sendSSE('log', line);
             }
         });
     });
 
     scraper.stderr.on('data', (data) => {
-        res.write(`data: ${JSON.stringify({ type: 'error', message: data.toString() })}\n\n`);
+        sendSSE('error', data.toString());
+    });
+
+    scraper.on('error', (error) => {
+        sendSSE('error', `❌ Failed to start scraper: ${error.message}`);
+        session.isRunning = false;
+        sendSSE('done', null, 1);
+        res.end();
     });
 
     scraper.on('close', (code) => {
@@ -197,7 +236,7 @@ app.get('/api/run', (req, res) => {
             fs.unlinkSync(tempConfigPath);
         } catch (e) { }
 
-        res.write(`data: ${JSON.stringify({ type: 'done', code })}\n\n`);
+        sendSSE('done', null, code);
         res.end();
     });
 

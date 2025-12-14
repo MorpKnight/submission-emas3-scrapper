@@ -156,21 +156,22 @@ async function runScraper() {
 
             if (data.type === 'log') {
                 let type = '';
-                if (data.message.includes('✅')) type = 'success';
-                else if (data.message.includes('❌') || data.message.includes('Error')) type = 'error';
-                else if (data.message.includes('⚠️')) type = 'warning';
+                if (data.message && data.message.includes('✅')) type = 'success';
+                else if (data.message && (data.message.includes('❌') || data.message.includes('Error'))) type = 'error';
+                else if (data.message && data.message.includes('⚠️')) type = 'warning';
 
-                addLog(data.message, type);
+                if (data.message) addLog(data.message, type);
             } else if (data.type === 'error') {
-                addLog(data.message, 'error');
+                if (data.message) addLog(data.message, 'error');
             } else if (data.type === 'done') {
-                addLog(`Process finished with code ${data.code}`, data.code === 0 ? 'success' : 'error');
+                const exitCode = data.code ?? 0;
+                addLog(`Process finished with code ${exitCode}`, exitCode === 0 ? 'success' : 'error');
                 eventSource.close();
 
                 runBtn.disabled = false;
                 runBtn.innerHTML = '<span>▶️</span> Start Download';
 
-                if (data.code === 0) {
+                if (exitCode === 0) {
                     showToast('Download completed!', 'success');
                     loadFiles();
                 } else {
@@ -180,7 +181,11 @@ async function runScraper() {
         };
 
         eventSource.onerror = (e) => {
-            addLog('Connection error or scraper failed', 'error');
+            // Check if eventSource is already closed (meaning we got done event)
+            if (eventSource.readyState === EventSource.CLOSED) {
+                return;
+            }
+            addLog('Connection error', 'error');
             eventSource.close();
             runBtn.disabled = false;
             runBtn.innerHTML = '<span>▶️</span> Start Download';
