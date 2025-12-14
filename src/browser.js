@@ -1,7 +1,6 @@
 const puppeteer = require('puppeteer');
 const config = require('./config');
 const fs = require('fs');
-const path = require('path');
 
 let browser = null;
 
@@ -14,12 +13,29 @@ async function launchBrowser() {
         fs.mkdirSync(config.downloadPath, { recursive: true });
     }
 
-    browser = await puppeteer.launch({
+    // Check if running in Docker (Chromium path exists)
+    const isDocker = process.env.PUPPETEER_EXECUTABLE_PATH || fs.existsSync('/usr/bin/chromium');
+
+    const launchOptions = {
         headless: config.headless,
         slowMo: config.slowMo,
         defaultViewport: { width: 1280, height: 800 },
-        args: ['--start-maximized'],
-    });
+        args: [
+            '--start-maximized',
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--disable-software-rasterizer',
+        ],
+    };
+
+    // Use system Chromium in Docker
+    if (isDocker && process.env.PUPPETEER_EXECUTABLE_PATH) {
+        launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+    }
+
+    browser = await puppeteer.launch(launchOptions);
 
     const page = await browser.newPage();
 
@@ -41,8 +57,13 @@ async function launchBrowser() {
  */
 async function closeBrowser() {
     if (browser) {
-        await browser.close();
-        console.log('✅ Browser closed');
+        try {
+            await browser.close();
+            browser = null;
+            console.log('✅ Browser closed');
+        } catch (e) {
+            console.error('⚠️ Error closing browser:', e.message);
+        }
     }
 }
 
