@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  scraper:
+    build: .
+    container_name: emas3-scraper
+    ports:
+      - "3000:3000"
+    volumes:
+      # Persist downloads
+      - ./downloads:/app/downloads
+      # Persist student list
+      - ./data:/app/data
+    environment:
+      - NODE_ENV=production
+    restart: unless-stopped

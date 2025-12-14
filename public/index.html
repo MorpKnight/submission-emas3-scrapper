@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EMAS3 Scraper Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+  <div class="container">
+    <header>
+      <h1>🎓 EMAS3 Scraper</h1>
+      <p class="subtitle">Download submissions with ease</p>
+    </header>
+
+    <div class="grid">
+      <!-- Config Card -->
+      <div class="card">
+        <div class="card-header">
+          <span class="icon">⚙️</span>
+          <h2>Configuration</h2>
+        </div>
+        <div class="card-body">
+          <div class="form-group">
+            <label for="username">Username</label>
+            <input type="text" id="username" placeholder="Enter SSO username">
+          </div>
+          <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" placeholder="Enter password">
+          </div>
+          <div class="form-group">
+            <label for="classUrl">Class URL</label>
+            <input type="url" id="classUrl" placeholder="https://emas3.ui.ac.id/course/view.php?id=...">
+          </div>
+          <div class="form-group">
+            <label for="submissionUrl">Submission URL</label>
+            <input type="url" id="submissionUrl" placeholder="https://emas3.ui.ac.id/mod/assign/view.php?id=...">
+          </div>
+          <div class="form-group checkbox-group">
+            <label>
+              <input type="checkbox" id="headless" checked>
+              <span>Headless Mode (No browser window)</span>
+            </label>
+          </div>
+          <button class="btn btn-primary" onclick="saveConfig()">
+            <span>💾</span> Save Configuration
+          </button>
+        </div>
+      </div>
+
+      <!-- Students Card -->
+      <div class="card">
+        <div class="card-header">
+          <span class="icon">📋</span>
+          <h2>NPM List</h2>
+          <span class="badge" id="studentCount">0 students</span>
+        </div>
+        <div class="card-body">
+          <div class="form-group">
+            <label for="students">Enter NPM (one per line)</label>
+            <textarea id="students" rows="12" placeholder="2206062844
+2206059805
+2206123456"></textarea>
+          </div>
+          <button class="btn btn-secondary" onclick="saveStudents()">
+            <span>💾</span> Save NPM List
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Run Card -->
+    <div class="card card-run">
+      <div class="card-header">
+        <span class="icon">🚀</span>
+        <h2>Run Scraper</h2>
+        <button class="btn btn-success" id="runBtn" onclick="runScraper()">
+          <span>▶️</span> Start Download
+        </button>
+      </div>
+      <div class="card-body">
+        <div class="log-container" id="logContainer">
+          <div class="log-placeholder">Logs will appear here when you start the scraper...</div>
+        </div>
+      </div>
+
+      <!-- Downloads Card -->
+      <div class="card card-downloads">
+        <div class="card-header">
+          <span class="icon">📦</span>
+          <h2>Downloaded Files</h2>
+          <button class="btn btn-secondary btn-sm" onclick="loadFiles()">
+            <span>🔄</span> Refresh
+          </button>
+        </div>
+        <div class="card-body">
+          <div class="files-container" id="filesContainer">
+            <div class="log-placeholder">No files downloaded yet...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Status Toast -->
+      <div class="toast" id="toast"></div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>

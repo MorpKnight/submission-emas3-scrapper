@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Downloads
+downloads/
+
+# Data files with sensitive info (keep example file)
+data/student.txt
+!data/student.txt.example
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Build output
+dist/
+build/
