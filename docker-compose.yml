@@ -5,8 +5,6 @@ services:
       dockerfile: Dockerfile
     image: emas3-scraper:latest
     container_name: emas3-scraper
-    ports:
-      - "3000:3000"
     volumes:
       - downloads:/app/downloads
       - data:/app/data
@@ -23,7 +21,13 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    networks:
+      - cloudflared-private
 
 volumes:
   downloads:
   data:
+
+networks:
+  cloudflared-private:
+    external: true
