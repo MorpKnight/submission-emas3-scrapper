@@ -1,8 +1,11 @@
 # Dependencies
 node_modules/
 
-# Downloads
+# Downloads (per-session)
 downloads/
+
+# Temp session configs
+temp/
 
 # Data files with sensitive info (keep example file)
 data/student.txt

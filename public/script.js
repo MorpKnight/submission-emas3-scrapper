@@ -1,9 +1,39 @@
-// Load data on page load
-document.addEventListener('DOMContentLoaded', () => {
+// Session management
+let sessionId = localStorage.getItem('sessionId');
+
+// Initialize session on page load
+document.addEventListener('DOMContentLoaded', async () => {
+    await initSession();
     loadConfig();
     loadStudents();
     loadFiles();
 });
+
+// Initialize or restore session
+async function initSession() {
+    try {
+        const res = await fetch('/api/session', {
+            headers: getHeaders()
+        });
+        const data = await res.json();
+
+        if (data.sessionId) {
+            sessionId = data.sessionId;
+            localStorage.setItem('sessionId', sessionId);
+            console.log('Session:', sessionId.slice(0, 8) + '...');
+        }
+    } catch (error) {
+        console.error('Failed to init session:', error);
+    }
+}
+
+// Get headers with session ID
+function getHeaders() {
+    return {
+        'Content-Type': 'application/json',
+        'X-Session-Id': sessionId || ''
+    };
+}
 
 // Show toast notification
 function showToast(message, type = 'success') {
@@ -18,7 +48,7 @@ function showToast(message, type = 'success') {
 // Load config from server
 async function loadConfig() {
     try {
-        const res = await fetch('/api/config');
+        const res = await fetch('/api/config', { headers: getHeaders() });
         const config = await res.json();
         document.getElementById('username').value = config.username || '';
         document.getElementById('password').value = config.password || '';
@@ -43,7 +73,7 @@ async function saveConfig() {
 
         const res = await fetch('/api/config', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getHeaders(),
             body: JSON.stringify(config),
         });
 
@@ -57,7 +87,7 @@ async function saveConfig() {
 // Load students from server
 async function loadStudents() {
     try {
-        const res = await fetch('/api/students');
+        const res = await fetch('/api/students', { headers: getHeaders() });
         const data = await res.json();
         document.getElementById('students').value = data.students || '';
         updateStudentCount();
@@ -73,7 +103,7 @@ async function saveStudents() {
 
         const res = await fetch('/api/students', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getHeaders(),
             body: JSON.stringify({ students }),
         });
 
@@ -88,7 +118,7 @@ async function saveStudents() {
 // Update student count badge
 function updateStudentCount() {
     const students = document.getElementById('students').value;
-    const count = students.split('\n').filter(l => l.trim()).length;
+    const count = students.split('\n').filter(l => l.trim() && !l.trim().startsWith('#')).length;
     document.getElementById('studentCount').textContent = `${count} students`;
 }
 
@@ -116,7 +146,10 @@ async function runScraper() {
     addLog('Starting scraper...', 'warning');
 
     try {
-        const eventSource = new EventSource('/api/run');
+        // Use fetch with session header for SSE
+        // Pass session via query param since EventSource can't send headers
+        const url = `/api/run?session=${encodeURIComponent(sessionId)}`;
+        const eventSource = new EventSource(url);
 
         eventSource.onmessage = (event) => {
             const data = JSON.parse(event.data);
@@ -139,15 +172,15 @@ async function runScraper() {
 
                 if (data.code === 0) {
                     showToast('Download completed!', 'success');
-                    loadFiles(); // Refresh file list
+                    loadFiles();
                 } else {
                     showToast('Scraper finished with errors', 'error');
                 }
             }
         };
 
-        eventSource.onerror = () => {
-            addLog('Connection lost', 'error');
+        eventSource.onerror = (e) => {
+            addLog('Connection error or scraper failed', 'error');
             eventSource.close();
             runBtn.disabled = false;
             runBtn.innerHTML = '<span>▶️</span> Start Download';
@@ -165,7 +198,7 @@ async function loadFiles() {
     const container = document.getElementById('filesContainer');
 
     try {
-        const res = await fetch('/api/files');
+        const res = await fetch('/api/files', { headers: getHeaders() });
         const data = await res.json();
 
         if (data.files.length === 0) {
@@ -202,6 +235,7 @@ async function deleteFile(filename) {
     try {
         const res = await fetch(`/api/files/${encodeURIComponent(filename)}`, {
             method: 'DELETE',
+            headers: getHeaders(),
         });
 
         const result = await res.json();
@@ -213,5 +247,14 @@ async function deleteFile(filename) {
         }
     } catch (error) {
         showToast('Failed to delete file', 'error');
+    }
+}
+
+// Clear session (logout)
+function clearSession() {
+    if (confirm('Clear your session? This will reset all your settings.')) {
+        localStorage.removeItem('sessionId');
+        sessionId = null;
+        location.reload();
     }
 }

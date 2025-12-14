@@ -12,6 +12,7 @@
   "type": "commonjs",
   "dependencies": {
     "express": "^5.2.1",
-    "puppeteer": "^24.33.0"
+    "puppeteer": "^24.33.0",
+    "uuid": "^13.0.0"
   }
 }

@@ -2,61 +2,86 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
+const { v4: uuidv4 } = require('uuid');
 
 const app = express();
 const PORT = 3000;
+
+// In-memory session storage (each user gets their own config)
+const sessions = new Map();
+
+// Session timeout (1 hour)
+const SESSION_TIMEOUT = 60 * 60 * 1000;
+
+// Cleanup expired sessions periodically
+setInterval(() => {
+    const now = Date.now();
+    for (const [sessionId, session] of sessions.entries()) {
+        if (now - session.lastAccess > SESSION_TIMEOUT) {
+            // Cleanup session downloads folder
+            const sessionDownloadPath = path.join(__dirname, 'downloads', sessionId);
+            if (fs.existsSync(sessionDownloadPath)) {
+                fs.rmSync(sessionDownloadPath, { recursive: true, force: true });
+            }
+            sessions.delete(sessionId);
+            console.log(`🧹 Session ${sessionId.slice(0, 8)}... expired and cleaned up`);
+        }
+    }
+}, 5 * 60 * 1000); // Check every 5 minutes
+
+// Get or create session
+function getSession(req, res) {
+    // Check header first, then query param (for SSE which can't send headers)
+    let sessionId = req.headers['x-session-id'] || req.query.session;
+
+    if (!sessionId || !sessions.has(sessionId)) {
+        sessionId = uuidv4();
+        sessions.set(sessionId, {
+            config: {
+                username: '',
+                password: '',
+                classUrl: '',
+                submissionUrl: '',
+                headless: true,
+            },
+            students: '',
+            lastAccess: Date.now(),
+            isRunning: false,
+        });
+        console.log(`🆕 New session created: ${sessionId.slice(0, 8)}...`);
+    } else {
+        sessions.get(sessionId).lastAccess = Date.now();
+    }
+
+    return { sessionId, session: sessions.get(sessionId) };
+}
 
 // Middleware
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Config file path
-const configPath = path.join(__dirname, 'src', 'config.js');
-const studentPath = path.join(__dirname, 'data', 'student.txt');
+// Serve downloads per session
+app.use('/downloads', (req, res, next) => {
+    const sessionId = req.headers['x-session-id'];
+    if (sessionId) {
+        const sessionDownloadPath = path.join(__dirname, 'downloads', sessionId);
+        express.static(sessionDownloadPath)(req, res, next);
+    } else {
+        res.status(401).json({ error: 'No session' });
+    }
+});
 
-// Helper: Read current config
-function getConfig() {
-    delete require.cache[require.resolve('./src/config')];
-    return require('./src/config');
-}
-
-// Helper: Update config file
-function updateConfig(newConfig) {
-    const configContent = `const path = require('path');
-
-module.exports = {
-  // Credentials
-  username: '${newConfig.username}',
-  password: '${newConfig.password}',
-
-  // URLs
-  loginUrl: 'https://emas3.ui.ac.id/login/index.php',
-  classUrl: '${newConfig.classUrl}',
-  submissionUrl: '${newConfig.submissionUrl}',
-
-  // Paths
-  studentListPath: path.join(__dirname, '..', 'data', 'student.txt'),
-  downloadPath: path.join(__dirname, '..', 'downloads'),
-
-  // Browser settings
-  headless: ${newConfig.headless},
-  slowMo: 0,
-};
-`;
-    fs.writeFileSync(configPath, configContent);
-}
+// API: Get session ID (called on page load)
+app.get('/api/session', (req, res) => {
+    const { sessionId } = getSession(req, res);
+    res.json({ sessionId });
+});
 
 // API: Get config
 app.get('/api/config', (req, res) => {
     try {
-        const config = getConfig();
-        res.json({
-            username: config.username,
-            password: config.password,
-            classUrl: config.classUrl,
-            submissionUrl: config.submissionUrl,
-            headless: config.headless,
-        });
+        const { session } = getSession(req, res);
+        res.json(session.config);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -65,16 +90,15 @@ app.get('/api/config', (req, res) => {
 // API: Update config
 app.post('/api/config', (req, res) => {
     try {
-        const config = getConfig();
-        const newConfig = {
-            username: req.body.username || config.username,
-            password: req.body.password || config.password,
-            classUrl: req.body.classUrl || config.classUrl,
-            submissionUrl: req.body.submissionUrl || config.submissionUrl,
-            headless: req.body.headless !== undefined ? req.body.headless : config.headless,
+        const { session } = getSession(req, res);
+        session.config = {
+            username: req.body.username || '',
+            password: req.body.password || '',
+            classUrl: req.body.classUrl || '',
+            submissionUrl: req.body.submissionUrl || '',
+            headless: req.body.headless !== false,
         };
-        updateConfig(newConfig);
-        res.json({ success: true, message: 'Config updated!' });
+        res.json({ success: true, message: 'Config saved!' });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -83,10 +107,8 @@ app.post('/api/config', (req, res) => {
 // API: Get students
 app.get('/api/students', (req, res) => {
     try {
-        const content = fs.existsSync(studentPath)
-            ? fs.readFileSync(studentPath, 'utf-8')
-            : '';
-        res.json({ students: content });
+        const { session } = getSession(req, res);
+        res.json({ students: session.students });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -95,8 +117,9 @@ app.get('/api/students', (req, res) => {
 // API: Update students
 app.post('/api/students', (req, res) => {
     try {
-        fs.writeFileSync(studentPath, req.body.students || '');
-        const count = req.body.students.split('\n').filter(l => l.trim()).length;
+        const { session } = getSession(req, res);
+        session.students = req.body.students || '';
+        const count = session.students.split('\n').filter(l => l.trim()).length;
         res.json({ success: true, message: `Saved ${count} students` });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -105,11 +128,53 @@ app.post('/api/students', (req, res) => {
 
 // API: Run scraper with SSE
 app.get('/api/run', (req, res) => {
+    const { sessionId, session } = getSession(req, res);
+
+    // Check if already running
+    if (session.isRunning) {
+        res.status(400).json({ error: 'Scraper is already running for this session' });
+        return;
+    }
+
+    // Validate config
+    if (!session.config.username || !session.config.password || !session.config.submissionUrl) {
+        res.status(400).json({ error: 'Please fill in all required config fields' });
+        return;
+    }
+
+    if (!session.students.trim()) {
+        res.status(400).json({ error: 'Please add at least one NPM to the list' });
+        return;
+    }
+
+    session.isRunning = true;
+
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Session-Id', sessionId);
 
-    const scraper = spawn('node', ['src/index.js'], { cwd: __dirname });
+    // Create session-specific download folder
+    const sessionDownloadPath = path.join(__dirname, 'downloads', sessionId);
+    if (!fs.existsSync(sessionDownloadPath)) {
+        fs.mkdirSync(sessionDownloadPath, { recursive: true });
+    }
+
+    // Create temp config file for this session
+    const tempConfigPath = path.join(__dirname, 'temp', `config-${sessionId}.json`);
+    const tempDir = path.join(__dirname, 'temp');
+    if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
+    }
+
+    fs.writeFileSync(tempConfigPath, JSON.stringify({
+        ...session.config,
+        students: session.students,
+        downloadPath: sessionDownloadPath,
+        loginUrl: 'https://emas3.ui.ac.id/login/index.php',
+    }));
+
+    const scraper = spawn('node', ['src/runner.js', tempConfigPath], { cwd: __dirname });
 
     scraper.stdout.on('data', (data) => {
         const lines = data.toString().split('\n');
@@ -125,30 +190,38 @@ app.get('/api/run', (req, res) => {
     });
 
     scraper.on('close', (code) => {
+        session.isRunning = false;
+
+        // Cleanup temp config
+        try {
+            fs.unlinkSync(tempConfigPath);
+        } catch (e) { }
+
         res.write(`data: ${JSON.stringify({ type: 'done', code })}\n\n`);
         res.end();
     });
 
     req.on('close', () => {
+        session.isRunning = false;
         scraper.kill();
+        try {
+            fs.unlinkSync(tempConfigPath);
+        } catch (e) { }
     });
 });
 
-// Downloads folder path
-const downloadsPath = path.join(__dirname, 'downloads');
-
-// Serve downloads folder for direct file access
-app.use('/downloads', express.static(downloadsPath));
-
-// API: List downloaded files
+// API: List downloaded files (per session)
 app.get('/api/files', (req, res) => {
     try {
-        if (!fs.existsSync(downloadsPath)) {
+        const { sessionId } = getSession(req, res);
+        const sessionDownloadPath = path.join(__dirname, 'downloads', sessionId);
+
+        if (!fs.existsSync(sessionDownloadPath)) {
             return res.json({ files: [] });
         }
 
-        const files = fs.readdirSync(downloadsPath).map(filename => {
-            const filepath = path.join(downloadsPath, filename);
+        const files = fs.readdirSync(sessionDownloadPath).map(filename => {
+            const filepath = path.join(sessionDownloadPath, filename);
             const stats = fs.statSync(filepath);
             return {
                 name: filename,
@@ -157,7 +230,7 @@ app.get('/api/files', (req, res) => {
                 date: stats.mtime,
                 url: `/downloads/${encodeURIComponent(filename)}`
             };
-        }).sort((a, b) => new Date(b.date) - new Date(a.date)); // newest first
+        }).sort((a, b) => new Date(b.date) - new Date(a.date));
 
         res.json({ files });
     } catch (error) {
@@ -168,7 +241,9 @@ app.get('/api/files', (req, res) => {
 // API: Delete a file
 app.delete('/api/files/:filename', (req, res) => {
     try {
-        const filepath = path.join(downloadsPath, req.params.filename);
+        const { sessionId } = getSession(req, res);
+        const filepath = path.join(__dirname, 'downloads', sessionId, req.params.filename);
+
         if (fs.existsSync(filepath)) {
             fs.unlinkSync(filepath);
             res.json({ success: true, message: 'File deleted' });
@@ -203,12 +278,10 @@ app.use((req, res) => {
 // Global unhandled error handlers
 process.on('uncaughtException', (error) => {
     console.error('❌ Uncaught Exception:', error.message);
-    // Don't crash the server
 });
 
 process.on('unhandledRejection', (reason) => {
     console.error('❌ Unhandled Rejection:', reason);
-    // Don't crash the server
 });
 
 // Graceful shutdown
@@ -225,9 +298,9 @@ process.on('SIGINT', () => {
 // Start server
 const server = app.listen(PORT, () => {
     console.log(`🚀 EMAS3 Dashboard running at http://localhost:${PORT}`);
+    console.log('👥 Multi-user mode enabled - each user gets isolated sessions');
 });
 
-// Handle server errors
 server.on('error', (error) => {
     if (error.code === 'EADDRINUSE') {
         console.error(`❌ Port ${PORT} is already in use`);
