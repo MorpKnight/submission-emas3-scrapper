@@ -73,8 +73,19 @@ app.use('/downloads', (req, res, next) => {
 
 // API: Get session ID (called on page load)
 app.get('/api/session', (req, res) => {
-    const { sessionId } = getSession(req, res);
-    res.json({ sessionId });
+    // Check if client already has a session ID
+    const clientSessionId = req.headers['x-session-id'] || req.query.session;
+
+    // If client has valid session, return it; otherwise create new
+    if (clientSessionId && sessions.has(clientSessionId)) {
+        sessions.get(clientSessionId).lastAccess = Date.now();
+        console.log(`📋 Session restored: ${clientSessionId.slice(0, 8)}...`);
+        res.json({ sessionId: clientSessionId });
+    } else {
+        const { sessionId } = getSession(req, res);
+        console.log(`📋 Session assigned: ${sessionId.slice(0, 8)}...`);
+        res.json({ sessionId });
+    }
 });
 
 // API: Get config
@@ -90,7 +101,7 @@ app.get('/api/config', (req, res) => {
 // API: Update config
 app.post('/api/config', (req, res) => {
     try {
-        const { session } = getSession(req, res);
+        const { sessionId, session } = getSession(req, res);
         session.config = {
             username: req.body.username || '',
             password: req.body.password || '',
@@ -98,6 +109,7 @@ app.post('/api/config', (req, res) => {
             submissionUrl: req.body.submissionUrl || '',
             headless: req.body.headless !== false,
         };
+        console.log(`💾 Config saved for session ${sessionId.slice(0, 8)}... (user: ${session.config.username})`);
         res.json({ success: true, message: 'Config saved!' });
     } catch (error) {
         res.status(500).json({ error: error.message });
