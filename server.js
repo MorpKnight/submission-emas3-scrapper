@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
+const cookieParser = require('cookie-parser');
 
 const app = express();
 const PORT = 3000;
@@ -29,10 +30,10 @@ setInterval(() => {
     }
 }, 5 * 60 * 1000); // Check every 5 minutes
 
-// Get or create session
+// Get or create session (using cookies for better proxy compatibility)
 function getSession(req, res) {
-    // Check header first, then query param (for SSE which can't send headers)
-    let sessionId = req.headers['x-session-id'] || req.query.session;
+    // Check cookie first, then header, then query param
+    let sessionId = req.cookies?.sessionId || req.headers['x-session-id'] || req.query.session;
 
     if (!sessionId || !sessions.has(sessionId)) {
         sessionId = uuidv4();
@@ -53,17 +54,28 @@ function getSession(req, res) {
         sessions.get(sessionId).lastAccess = Date.now();
     }
 
+    // Set cookie for future requests (works with SSE and proxies)
+    if (res && !res.headersSent) {
+        res.cookie('sessionId', sessionId, {
+            httpOnly: false, // Allow JS access for debugging
+            secure: false, // Set to true in production with HTTPS
+            sameSite: 'lax',
+            maxAge: SESSION_TIMEOUT,
+        });
+    }
+
     return { sessionId, session: sessions.get(sessionId) };
 }
 
 // Middleware
+app.use(cookieParser());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Serve downloads per session
 app.use('/downloads', (req, res, next) => {
-    const sessionId = req.headers['x-session-id'];
-    if (sessionId) {
+    const sessionId = req.cookies?.sessionId || req.headers['x-session-id'] || req.query.session;
+    if (sessionId && sessions.has(sessionId)) {
         const sessionDownloadPath = path.join(__dirname, 'downloads', sessionId);
         express.static(sessionDownloadPath)(req, res, next);
     } else {

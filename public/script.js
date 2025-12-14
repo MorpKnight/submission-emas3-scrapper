@@ -1,7 +1,6 @@
-// Session management
-let sessionId = localStorage.getItem('sessionId');
+// Session is managed by cookies (automatic with credentials: 'include')
 
-// Initialize session on page load
+// Initialize on page load
 document.addEventListener('DOMContentLoaded', async () => {
     await initSession();
     loadConfig();
@@ -9,30 +8,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     loadFiles();
 });
 
-// Initialize or restore session
+// Initialize session (sets cookie automatically)
 async function initSession() {
     try {
-        const res = await fetch('/api/session', {
-            headers: getHeaders()
-        });
+        const res = await fetch('/api/session', { credentials: 'include' });
         const data = await res.json();
-
-        if (data.sessionId) {
-            sessionId = data.sessionId;
-            localStorage.setItem('sessionId', sessionId);
-            console.log('Session:', sessionId.slice(0, 8) + '...');
-        }
+        console.log('Session:', data.sessionId?.slice(0, 8) + '...');
     } catch (error) {
         console.error('Failed to init session:', error);
     }
-}
-
-// Get headers with session ID
-function getHeaders() {
-    return {
-        'Content-Type': 'application/json',
-        'X-Session-Id': sessionId || ''
-    };
 }
 
 // Show toast notification
@@ -48,7 +32,7 @@ function showToast(message, type = 'success') {
 // Load config from server
 async function loadConfig() {
     try {
-        const res = await fetch('/api/config', { headers: getHeaders() });
+        const res = await fetch('/api/config', { credentials: 'include' });
         const config = await res.json();
         document.getElementById('username').value = config.username || '';
         document.getElementById('password').value = config.password || '';
@@ -73,7 +57,8 @@ async function saveConfig() {
 
         const res = await fetch('/api/config', {
             method: 'POST',
-            headers: getHeaders(),
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(config),
         });
 
@@ -87,7 +72,7 @@ async function saveConfig() {
 // Load students from server
 async function loadStudents() {
     try {
-        const res = await fetch('/api/students', { headers: getHeaders() });
+        const res = await fetch('/api/students', { credentials: 'include' });
         const data = await res.json();
         document.getElementById('students').value = data.students || '';
         updateStudentCount();
@@ -103,7 +88,8 @@ async function saveStudents() {
 
         const res = await fetch('/api/students', {
             method: 'POST',
-            headers: getHeaders(),
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ students }),
         });
 
@@ -132,7 +118,6 @@ async function runScraper() {
 
     runBtn.disabled = true;
     runBtn.innerHTML = '<span>⏳</span> Running...';
-
     logContainer.innerHTML = '';
 
     function addLog(message, type = '') {
@@ -146,10 +131,8 @@ async function runScraper() {
     addLog('Starting scraper...', 'warning');
 
     try {
-        // Use fetch with session header for SSE
-        // Pass session via query param since EventSource can't send headers
-        const url = `/api/run?session=${encodeURIComponent(sessionId)}`;
-        const eventSource = new EventSource(url);
+        // SSE with cookies (withCredentials)
+        const eventSource = new EventSource('/api/run', { withCredentials: true });
 
         eventSource.onmessage = (event) => {
             const data = JSON.parse(event.data);
@@ -159,7 +142,6 @@ async function runScraper() {
                 if (data.message && data.message.includes('✅')) type = 'success';
                 else if (data.message && (data.message.includes('❌') || data.message.includes('Error'))) type = 'error';
                 else if (data.message && data.message.includes('⚠️')) type = 'warning';
-
                 if (data.message) addLog(data.message, type);
             } else if (data.type === 'error') {
                 if (data.message) addLog(data.message, 'error');
@@ -180,11 +162,8 @@ async function runScraper() {
             }
         };
 
-        eventSource.onerror = (e) => {
-            // Check if eventSource is already closed (meaning we got done event)
-            if (eventSource.readyState === EventSource.CLOSED) {
-                return;
-            }
+        eventSource.onerror = () => {
+            if (eventSource.readyState === EventSource.CLOSED) return;
             addLog('Connection error', 'error');
             eventSource.close();
             runBtn.disabled = false;
@@ -203,10 +182,10 @@ async function loadFiles() {
     const container = document.getElementById('filesContainer');
 
     try {
-        const res = await fetch('/api/files', { headers: getHeaders() });
+        const res = await fetch('/api/files', { credentials: 'include' });
         const data = await res.json();
 
-        if (data.files.length === 0) {
+        if (!data.files || data.files.length === 0) {
             container.innerHTML = '<div class="log-placeholder">No files downloaded yet...</div>';
             return;
         }
@@ -240,7 +219,7 @@ async function deleteFile(filename) {
     try {
         const res = await fetch(`/api/files/${encodeURIComponent(filename)}`, {
             method: 'DELETE',
-            headers: getHeaders(),
+            credentials: 'include',
         });
 
         const result = await res.json();
@@ -252,14 +231,5 @@ async function deleteFile(filename) {
         }
     } catch (error) {
         showToast('Failed to delete file', 'error');
-    }
-}
-
-// Clear session (logout)
-function clearSession() {
-    if (confirm('Clear your session? This will reset all your settings.')) {
-        localStorage.removeItem('sessionId');
-        sessionId = null;
-        location.reload();
     }
 }
