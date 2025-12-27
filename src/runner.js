@@ -186,11 +186,7 @@ async function selectStudents(page, npmList) {
 async function downloadSubmissions(page) {
     console.log('⬆️ Scrolling to grading action section...');
 
-    page.on('dialog', async (dialog) => {
-        console.log(`📢 Dialog appeared: "${dialog.message()}"`);
-        console.log('✅ Clicking OK on dialog...');
-        await dialog.accept();
-    });
+    console.log('⬆️ Scrolling to grading action section...');
 
     await page.evaluate(() => {
         window.scrollTo(0, 0);
@@ -287,6 +283,14 @@ async function main() {
 
     try {
         page = await launchBrowser();
+
+        // Setup dialog handler once for the session
+        page.on('dialog', async (dialog) => {
+            console.log(`📢 Dialog appeared: "${dialog.message()}"`);
+            console.log('✅ Clicking OK on dialog...');
+            await dialog.accept();
+        });
+
         await login(page);
         const npmList = readStudentList();
 
