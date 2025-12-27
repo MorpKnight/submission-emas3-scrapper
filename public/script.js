@@ -36,8 +36,8 @@ async function loadConfig() {
         const config = await res.json();
         document.getElementById('username').value = config.username || '';
         document.getElementById('password').value = config.password || '';
-        document.getElementById('classUrl').value = config.classUrl || '';
-        document.getElementById('submissionUrl').value = config.submissionUrl || '';
+        const submissionUrls = config.submissionUrls || [];
+        document.getElementById('submissionUrls').value = submissionUrls.join('\n');
         document.getElementById('headless').checked = config.headless !== false;
     } catch (error) {
         showToast('Failed to load config', 'error');
@@ -50,8 +50,7 @@ async function saveConfig() {
         const config = {
             username: document.getElementById('username').value,
             password: document.getElementById('password').value,
-            classUrl: document.getElementById('classUrl').value,
-            submissionUrl: document.getElementById('submissionUrl').value,
+            submissionUrls: document.getElementById('submissionUrls').value.split('\n').filter(url => url.trim()),
             headless: document.getElementById('headless').checked,
         };
 

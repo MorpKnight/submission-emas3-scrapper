@@ -41,8 +41,7 @@ function getSession(req, res) {
             config: {
                 username: '',
                 password: '',
-                classUrl: '',
-                submissionUrl: '',
+                submissionUrls: [],
                 headless: true,
             },
             students: '',
@@ -117,8 +116,7 @@ app.post('/api/config', (req, res) => {
         session.config = {
             username: req.body.username || '',
             password: req.body.password || '',
-            classUrl: req.body.classUrl || '',
-            submissionUrl: req.body.submissionUrl || '',
+            submissionUrls: req.body.submissionUrls || [],
             headless: req.body.headless !== false,
         };
         console.log(`💾 Config saved for session ${sessionId.slice(0, 8)}... (user: ${session.config.username})`);
@@ -174,8 +172,8 @@ app.get('/api/run', (req, res) => {
     }
 
     // Validate config
-    if (!session.config.username || !session.config.password || !session.config.submissionUrl) {
-        sendSSE('error', '❌ Please fill in all required config fields (Username, Password, Submission URL)');
+    if (!session.config.username || !session.config.password || !session.config.submissionUrls || session.config.submissionUrls.length === 0) {
+        sendSSE('error', '❌ Please fill in all required config fields (Username, Password, Submission URLs)');
         sendSSE('done', null, 1);
         res.end();
         return;

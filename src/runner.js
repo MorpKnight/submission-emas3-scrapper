@@ -24,7 +24,7 @@ const config = {
     username: sessionConfig.username,
     password: sessionConfig.password,
     classUrl: sessionConfig.classUrl,
-    submissionUrl: sessionConfig.submissionUrl,
+    submissionUrls: sessionConfig.submissionUrls,
     loginUrl: sessionConfig.loginUrl,
     downloadPath: sessionConfig.downloadPath,
     headless: sessionConfig.headless,
@@ -128,9 +128,9 @@ async function login(page) {
     console.log('✅ Login successful!');
 }
 
-async function navigateToSubmission(page) {
-    console.log('📝 Navigating to submission page...');
-    await page.goto(config.submissionUrl, { waitUntil: 'networkidle2' });
+async function navigateToSubmission(page, url) {
+    console.log(`📝 Navigating to submission page: ${url}...`);
+    await page.goto(url, { waitUntil: 'networkidle2' });
     await wait(500);
     console.log('✅ Submission page loaded');
 }
@@ -288,8 +288,6 @@ async function main() {
     try {
         page = await launchBrowser();
         await login(page);
-        await navigateToSubmission(page);
-
         const npmList = readStudentList();
 
         if (npmList.length === 0) {
@@ -297,8 +295,27 @@ async function main() {
             return;
         }
 
-        await selectStudents(page, npmList);
-        await downloadSubmissions(page);
+        if (!config.submissionUrls || config.submissionUrls.length === 0) {
+            console.log('⚠️ No submission URLs provided');
+            return;
+        }
+
+        console.log(`📚 Processing ${config.submissionUrls.length} submission URLs...`);
+
+        for (let i = 0; i < config.submissionUrls.length; i++) {
+            const url = config.submissionUrls[i];
+            console.log(`\n----------------------------------------`);
+            console.log(`🔄 [${i + 1}/${config.submissionUrls.length}] Processing URL: ${url}`);
+
+            try {
+                await navigateToSubmission(page, url);
+                await selectStudents(page, npmList);
+                await downloadSubmissions(page);
+            } catch (err) {
+                console.error(`❌ Failed to process URL ${url}: ${err.message}`);
+                // Continue to next URL
+            }
+        }
 
         console.log('\n🎉 Process completed successfully!');
         console.log('📁 Check the downloads folder for your files.');
